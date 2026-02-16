@@ -30,12 +30,17 @@ class Token {
 						'validate_callback' => [ $this, 'validate_grant_type' ],
 					],
 					'client_id'  => [
-						'required'          => true,
+						'required'          => false,
 						'type'              => 'string',
 						'validate_callback' => 'rest_validate_request_arg',
 					],
 					'code'       => [
-						'required'          => true,
+						'required'          => false,
+						'type'              => 'string',
+						'validate_callback' => 'rest_validate_request_arg',
+					],
+					'client_secret' => [
+						'required'          => false,
 						'type'              => 'string',
 						'validate_callback' => 'rest_validate_request_arg',
 					],
@@ -52,7 +57,7 @@ class Token {
 	 * @return bool Whether or not the grant type is valid.
 	 */
 	public function validate_grant_type( $type ) {
-		return 'authorization_code' === $type;
+		return in_array( $type, [ 'authorization_code', 'client_credentials' ], true );
 	}
 
 	/**
@@ -63,6 +68,11 @@ class Token {
 	 * @return array|WP_Error Token data on success, or error on failure.
 	 */
 	public function exchange_token( WP_REST_Request $request ) {
+		// Handle client_credentials grant type
+		if ( $request['grant_type'] === 'client_credentials' ) {
+			return $this->handle_client_credentials( $request );
+		}
+
 		$client = OAuth2\get_client( $request['client_id'] );
 		if ( empty( $client ) ) {
 			return new WP_Error(
@@ -111,5 +121,103 @@ class Token {
 			'token_type'   => 'bearer',
 		];
 		return $data;
+	}
+
+	/**
+	 * Handle client credentials grant type.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return array|WP_Error Token data on success, or error on failure.
+	 */
+	private function handle_client_credentials( WP_REST_Request $request ) {
+		// Extract client credentials from Authorization header or request body
+		$credentials = $this->extract_client_credentials( $request );
+		if ( is_wp_error( $credentials ) ) {
+			return $credentials;
+		}
+
+		list( $client_id, $client_secret ) = $credentials;
+
+		// Get the client
+		$client = OAuth2\get_client( $client_id );
+		if ( empty( $client ) ) {
+			return new WP_Error(
+				'oauth2.endpoints.token.invalid_client',
+				__( 'Client authentication failed.', 'oauth2' ),
+				[ 'status' => WP_Http::UNAUTHORIZED ]
+			);
+		}
+
+		// Verify client secret
+		if ( ! $client->check_secret( $client_secret ) ) {
+			return new WP_Error(
+				'oauth2.endpoints.token.invalid_client',
+				__( 'Client authentication failed.', 'oauth2' ),
+				[ 'status' => WP_Http::UNAUTHORIZED ]
+			);
+		}
+
+		// Create access token for the client (no user)
+		$token = OAuth2\Tokens\Access_Token::create_for_client( $client );
+		if ( is_wp_error( $token ) ) {
+			return $token;
+		}
+
+		$ttl = apply_filters( 'oauth2.client_token_ttl', OAuth2\Tokens\Access_Token::DEFAULT_TTL );
+
+		return [
+			'access_token' => $token->get_key(),
+			'token_type'   => 'bearer',
+			'expires_in'   => $ttl,
+		];
+	}
+
+	/**
+	 * Extract client credentials from Authorization header or request body.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return array|WP_Error Array with client_id and client_secret, or error.
+	 */
+	private function extract_client_credentials( WP_REST_Request $request ) {
+		$auth_header = $request->get_header( 'authorization' );
+
+		// Try Basic authentication from Authorization header
+		if ( ! empty( $auth_header ) && stripos( $auth_header, 'Basic ' ) === 0 ) {
+			$encoded = substr( $auth_header, 6 );
+			$decoded = base64_decode( $encoded, true );
+
+			if ( $decoded === false ) {
+				return new WP_Error(
+					'oauth2.endpoints.token.invalid_request',
+					__( 'Invalid Authorization header.', 'oauth2' ),
+					[ 'status' => WP_Http::BAD_REQUEST ]
+				);
+			}
+
+			$parts = explode( ':', $decoded, 2 );
+			if ( count( $parts ) !== 2 ) {
+				return new WP_Error(
+					'oauth2.endpoints.token.invalid_request',
+					__( 'Invalid Authorization header format.', 'oauth2' ),
+					[ 'status' => WP_Http::BAD_REQUEST ]
+				);
+			}
+
+			return [ trim( $parts[0] ), trim( $parts[1] ) ];
+		}
+
+		// Try from request body
+		$client_id     = $request->get_param( 'client_id' );
+		$client_secret = $request->get_param( 'client_secret' );
+
+		if ( empty( $client_id ) || empty( $client_secret ) ) {
+			return new WP_Error(
+				'oauth2.endpoints.token.invalid_request',
+				__( 'Client credentials not provided.', 'oauth2' ),
+				[ 'status' => WP_Http::BAD_REQUEST ]
+			);
+		}
+
+		return [ $client_id, $client_secret ];
 	}
 }

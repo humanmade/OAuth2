@@ -122,6 +122,17 @@ class Client implements ClientInterface {
 	}
 
 	/**
+	 * Check if the provided secret matches the client's secret.
+	 *
+	 * @param string $secret Secret to check.
+	 *
+	 * @return bool True if the secret matches, false otherwise.
+	 */
+	public function check_secret( $secret ) {
+		return hash_equals( $this->get_secret(), $secret );
+	}
+
+	/**
 	 * Get registered URI for the client.
 	 *
 	 * @return array List of valid redirect URIs.

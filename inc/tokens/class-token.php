@@ -13,7 +13,7 @@ abstract class Token {
 	/**
 	 * User the token belongs to.
 	 *
-	 * @var WP_User
+	 * @var WP_User|null
 	 */
 	protected $user;
 
@@ -28,10 +28,11 @@ abstract class Token {
 	protected $value;
 
 	/**
-	 * @param WP_User $key
-	 * @param mixed  $value
+	 * @param WP_User|null $user
+	 * @param string       $key
+	 * @param mixed        $value
 	 */
-	protected function __construct( WP_User $user, $key, $value ) {
+	protected function __construct( $user, $key, $value ) {
 		$this->user  = $user;
 		$this->key   = $key;
 		$this->value = $value;
@@ -40,10 +41,10 @@ abstract class Token {
 	/**
 	 * Get the ID for the user that the token represents.
 	 *
-	 * @return int
+	 * @return int|null User ID if token has a user, null otherwise.
 	 */
 	public function get_user_id() {
-		return $this->user->ID;
+		return $this->user ? $this->user->ID : null;
 	}
 
 	/**

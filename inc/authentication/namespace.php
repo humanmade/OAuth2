@@ -105,8 +105,9 @@ function get_token_from_request() {
 function attempt_authentication( $user = null ) {
 	// Lock against infinite loops when querying the token itself.
 	static $is_querying_token = false;
-	global $oauth2_error;
-	$oauth2_error = null;
+	global $oauth2_error, $oauth2_client_credentials;
+	$oauth2_error              = null;
+	$oauth2_client_credentials = null;
 
 	if ( ! empty( $user ) || $is_querying_token ) {
 		return $user;
@@ -128,12 +129,38 @@ function attempt_authentication( $user = null ) {
 		return $user;
 	}
 
+	// Check if the token has expired.
+	if ( $token->is_expired() ) {
+		$is_querying_token = false;
+		$oauth2_error      = new WP_Error(
+			'oauth2.authentication.token_expired',
+			__( 'Access token has expired.', 'oauth2' ),
+			[
+				'status' => \WP_Http::UNAUTHORIZED,
+			]
+		);
+		return $user;
+	}
+
 	$client            = $token->get_client();
 	$is_querying_token = false;
 
 	if ( empty( $token ) || empty( $client ) ) {
 		$oauth2_error = create_invalid_token_error( $token_value );
 		return $user;
+	}
+
+	// Check if this is a client credentials token (no user)
+	if ( $token->is_client_token() ) {
+		// Set global variable for client credentials authentication
+		$oauth2_client_credentials = [
+			'authenticated' => true,
+			'client_id'     => $client->get_id(),
+			'client'        => $client,
+			'token'         => $token,
+		];
+		// Return 0 to indicate no user but authentication is valid
+		return 0;
 	}
 
 	// Token found, authenticate as the user.

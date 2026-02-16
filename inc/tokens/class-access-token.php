@@ -14,8 +14,10 @@ use WP_User;
 use WP_User_Query;
 
 class Access_Token extends Token {
-	const META_PREFIX = '_oauth2_access_';
-	const KEY_LENGTH  = 12;
+	const META_PREFIX        = '_oauth2_access_';
+	const CLIENT_META_PREFIX = '_oauth2_client_token_';
+	const KEY_LENGTH         = 12;
+	const DEFAULT_TTL        = 86400; // 24 hours in seconds
 
 	/**
 	 * @return string Meta prefix.
@@ -108,6 +110,7 @@ class Access_Token extends Token {
 	 * @return static|null Token if ID is found, null otherwise.
 	 */
 	public static function get_by_id( $id ) {
+		// First try to find as a user token
 		$key  = static::META_PREFIX . $id;
 		$args = [
 			'number'      => 1,
@@ -125,17 +128,51 @@ class Access_Token extends Token {
 
 		$query   = new WP_User_Query( $args );
 		$results = $query->get_results();
-		if ( empty( $results ) ) {
+		if ( ! empty( $results ) ) {
+			$user  = $results[0];
+			$value = get_user_meta( $user->ID, wp_slash( $key ), false );
+			if ( ! empty( $value ) ) {
+				return new static( $user, $id, $value[0] );
+			}
+		}
+
+		// If not found as user token, try as client token
+		return static::get_client_token_by_id( $id );
+	}
+
+	/**
+	 * Get a client token by ID.
+	 *
+	 * @param string $id Token ID.
+	 *
+	 * @return static|null Token if ID is found, null otherwise.
+	 */
+	private static function get_client_token_by_id( $id ) {
+		$key  = static::CLIENT_META_PREFIX . $id;
+		$args = [
+			'post_type'      => OAuth2\Client::POST_TYPE,
+			'post_status'    => 'any',
+			'posts_per_page' => 1,
+			'meta_query'     => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+				[
+					'key'     => $key,
+					'compare' => 'EXISTS',
+				],
+			],
+		];
+
+		$query = new \WP_Query( $args );
+		if ( empty( $query->posts ) ) {
 			return null;
 		}
 
-		$user  = $results[0];
-		$value = get_user_meta( $user->ID, wp_slash( $key ), false );
+		$post  = $query->posts[0];
+		$value = get_post_meta( $post->ID, $key, true );
 		if ( empty( $value ) ) {
 			return null;
 		}
 
-		return new static( $user, $id, $value[0] );
+		return new static( null, $id, $value );
 	}
 
 	/**
@@ -195,11 +232,74 @@ class Access_Token extends Token {
 	}
 
 	/**
+	 * Creates a new token for a client (no user association).
+	 *
+	 * @param ClientInterface $client
+	 * @param array          $meta
+	 *
+	 * @return Access_Token|WP_Error Token instance, or error on failure.
+	 */
+	public static function create_for_client( ClientInterface $client, $meta = [] ) {
+		$ttl      = apply_filters( 'oauth2.client_token_ttl', static::DEFAULT_TTL );
+		$data     = [
+			'client'  => $client->get_id(),
+			'created' => time(),
+			'expires' => time() + $ttl,
+			'meta'    => $meta,
+		];
+		$key      = wp_generate_password( static::KEY_LENGTH, false );
+		$meta_key = static::CLIENT_META_PREFIX . $key;
+
+		// Store token as post meta on the client post
+		$result = add_post_meta( $client->get_post_id(), wp_slash( $meta_key ), wp_slash( $data ), true );
+		if ( ! $result ) {
+			return new WP_Error(
+				'oauth2.tokens.access_token.create_for_client.could_not_create',
+				__( 'Unable to create client token.', 'oauth2' )
+			);
+		}
+
+		// Return token with null user
+		return new static( null, $key, $data );
+	}
+
+	/**
+	 * Check if this is a client-only token (no user association).
+	 *
+	 * @return bool True if this is a client token, false otherwise.
+	 */
+	public function is_client_token() {
+		return $this->user === null;
+	}
+
+	/**
+	 * Check if the token has expired.
+	 *
+	 * @return bool True if the token has expired, false otherwise.
+	 */
+	public function is_expired() {
+		if ( ! isset( $this->value['expires'] ) ) {
+			return false; // Tokens without expiration don't expire (backward compat)
+		}
+
+		return time() >= $this->value['expires'];
+	}
+
+	/**
+	 * Get expiration timestamp.
+	 *
+	 * @return int|null Expiration timestamp, or null if no expiration.
+	 */
+	public function get_expiration_time() {
+		return $this->value['expires'] ?? null;
+	}
+
+	/**
 	 * Check if the token is valid.
 	 *
 	 * @return bool True if the token is valid, false otherwise.
 	 */
 	public function is_valid() {
-		return true;
+		return ! $this->is_expired();
 	}
 }
