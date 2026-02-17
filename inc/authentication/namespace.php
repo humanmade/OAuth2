@@ -9,6 +9,7 @@ namespace WP\OAuth2\Authentication;
 
 use WP_Error;
 use WP_User;
+use WP\OAuth2\Admin\Settings;
 use WP\OAuth2\Tokens;
 
 /**
@@ -152,6 +153,17 @@ function attempt_authentication( $user = null ) {
 
 	// Check if this is a client credentials token (no user)
 	if ( $token->is_client_token() ) {
+		if ( ! Settings\is_client_credentials_enabled() ) {
+			$oauth2_error = new WP_Error(
+				'oauth2.authentication.client_credentials_disabled',
+				__( 'Client credentials authentication is not enabled.', 'oauth2' ),
+				[
+					'status' => \WP_Http::FORBIDDEN,
+				]
+			);
+			return $user;
+		}
+
 		// Set global variable for client credentials authentication
 		$oauth2_client_credentials = [
 			'authenticated' => true,

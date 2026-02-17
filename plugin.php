@@ -50,5 +50,6 @@ require __DIR__ . '/inc/types/class-implicit.php';
 require __DIR__ . '/inc/admin/namespace.php';
 require __DIR__ . '/inc/admin/profile/namespace.php';
 require __DIR__ . '/inc/admin/profile/personaltokens/namespace.php';
+require __DIR__ . '/inc/admin/settings/namespace.php';
 
 bootstrap();
