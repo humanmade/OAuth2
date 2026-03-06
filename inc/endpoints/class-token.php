@@ -206,9 +206,17 @@ class Token {
 	 * @return array|WP_Error Array with client_id and client_secret, or error.
 	 */
 	private function extract_client_credentials( WP_REST_Request $request ) {
+		// Try from request body first (avoids conflict with proxy/HTTP basic auth headers)
+		$client_id     = $request->get_param( 'client_id' );
+		$client_secret = $request->get_param( 'client_secret' );
+
+		if ( ! empty( $client_id ) && ! empty( $client_secret ) ) {
+			return [ $client_id, $client_secret ];
+		}
+
+		// Fall back to Basic authentication from Authorization header
 		$auth_header = $request->get_header( 'authorization' );
 
-		// Try Basic authentication from Authorization header
 		if ( ! empty( $auth_header ) && stripos( $auth_header, 'Basic ' ) === 0 ) {
 			$encoded = substr( $auth_header, 6 );
 			$decoded = base64_decode( $encoded, true );
@@ -233,18 +241,10 @@ class Token {
 			return [ trim( $parts[0] ), trim( $parts[1] ) ];
 		}
 
-		// Try from request body
-		$client_id     = $request->get_param( 'client_id' );
-		$client_secret = $request->get_param( 'client_secret' );
-
-		if ( empty( $client_id ) || empty( $client_secret ) ) {
-			return new WP_Error(
-				'oauth2.endpoints.token.invalid_request',
-				__( 'Client credentials not provided.', 'oauth2' ),
-				[ 'status' => WP_Http::BAD_REQUEST ]
-			);
-		}
-
-		return [ $client_id, $client_secret ];
+		return new WP_Error(
+			'oauth2.endpoints.token.invalid_request',
+			__( 'Client credentials not provided.', 'oauth2' ),
+			[ 'status' => WP_Http::BAD_REQUEST ]
+		);
 	}
 }
