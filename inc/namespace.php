@@ -27,7 +27,6 @@ function bootstrap() {
 	add_action( 'init', __NAMESPACE__ . '\\rest_oauth2_load_authorize_page' );
 	add_action( 'admin_menu', __NAMESPACE__ . '\\Admin\\register' );
 	Admin\Profile\bootstrap();
-	Admin\Settings\bootstrap();
 }
 
 /**

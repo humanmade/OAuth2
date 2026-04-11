@@ -68,15 +68,7 @@ class Token {
 	 * @return array|WP_Error Token data on success, or error on failure.
 	 */
 	public function exchange_token( WP_REST_Request $request ) {
-		// Handle client_credentials grant type
 		if ( $request['grant_type'] === 'client_credentials' ) {
-			if ( ! OAuth2\Admin\Settings\is_client_credentials_enabled() ) {
-				return new WP_Error(
-					'oauth2.endpoints.token.client_credentials_disabled',
-					__( 'The client_credentials grant type is not enabled.', 'oauth2' ),
-					[ 'status' => WP_Http::BAD_REQUEST ]
-				);
-			}
 			return $this->handle_client_credentials( $request );
 		}
 
@@ -137,7 +129,6 @@ class Token {
 	 * @return array|WP_Error Token data on success, or error on failure.
 	 */
 	private function handle_client_credentials( WP_REST_Request $request ) {
-		// Extract client credentials from Authorization header or request body
 		$credentials = $this->extract_client_credentials( $request );
 		if ( is_wp_error( $credentials ) ) {
 			return $credentials;
@@ -145,22 +136,8 @@ class Token {
 
 		list( $client_id, $client_secret ) = $credentials;
 
-		// Get the expected credentials from settings/filters.
-		$expected_id     = OAuth2\Admin\Settings\get_client_id();
-		$expected_secret = OAuth2\Admin\Settings\get_client_secret();
-
-		if ( empty( $expected_id ) || empty( $expected_secret ) ) {
-			return new WP_Error(
-				'oauth2.endpoints.token.not_configured',
-				__( 'Client credentials are not configured.', 'oauth2' ),
-				[ 'status' => WP_Http::INTERNAL_SERVER_ERROR ]
-			);
-		}
-
-		// Validate client ID and secret using timing-safe comparison.
-		if ( ! hash_equals( $expected_id, $client_id )
-			|| ! hash_equals( $expected_secret, $client_secret )
-		) {
+		$client = OAuth2\get_client( $client_id );
+		if ( empty( $client ) || ! $client->check_secret( $client_secret ) ) {
 			return new WP_Error(
 				'oauth2.endpoints.token.invalid_client',
 				__( 'Client authentication failed.', 'oauth2' ),
@@ -168,23 +145,14 @@ class Token {
 			);
 		}
 
-		// Look up a Client post for token storage.
-		// First try matching by client_id slug, then fall back to the settings storage client.
-		$client = OAuth2\get_client( $client_id );
-
-		if ( empty( $client ) ) {
-			$client = OAuth2\Admin\Settings\get_storage_client();
-		}
-
-		if ( empty( $client ) || is_wp_error( $client ) ) {
+		if ( ! $client->is_client_credentials_enabled() ) {
 			return new WP_Error(
-				'oauth2.endpoints.token.storage_not_configured',
-				__( 'Client credentials storage is not configured.', 'oauth2' ),
-				[ 'status' => WP_Http::INTERNAL_SERVER_ERROR ]
+				'oauth2.endpoints.token.client_credentials_disabled',
+				__( 'The client_credentials grant type is not enabled for this client.', 'oauth2' ),
+				[ 'status' => WP_Http::BAD_REQUEST ]
 			);
 		}
 
-		// Create access token for the client (no user)
 		$token = OAuth2\Tokens\Access_Token::create_for_client( $client );
 		if ( is_wp_error( $token ) ) {
 			return $token;
