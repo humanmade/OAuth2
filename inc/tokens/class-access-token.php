@@ -17,7 +17,6 @@ class Access_Token extends Token {
 	const META_PREFIX        = '_oauth2_access_';
 	const CLIENT_META_PREFIX = '_oauth2_client_token_';
 	const KEY_LENGTH         = 12;
-	const DEFAULT_TTL        = 86400; // 24 hours in seconds
 
 	/**
 	 * @return string Meta prefix.
@@ -240,11 +239,9 @@ class Access_Token extends Token {
 	 * @return Access_Token|WP_Error Token instance, or error on failure.
 	 */
 	public static function create_for_client( ClientInterface $client, $meta = [] ) {
-		$ttl      = apply_filters( 'oauth2.client_token_ttl', static::DEFAULT_TTL );
 		$data     = [
 			'client'  => $client->get_id(),
 			'created' => time(),
-			'expires' => time() + $ttl,
 			'meta'    => $meta,
 		];
 		$key      = wp_generate_password( static::KEY_LENGTH, false );
@@ -273,33 +270,11 @@ class Access_Token extends Token {
 	}
 
 	/**
-	 * Check if the token has expired.
-	 *
-	 * @return bool True if the token has expired, false otherwise.
-	 */
-	public function is_expired() {
-		if ( ! isset( $this->value['expires'] ) ) {
-			return false; // Tokens without expiration don't expire (backward compat)
-		}
-
-		return time() >= $this->value['expires'];
-	}
-
-	/**
-	 * Get expiration timestamp.
-	 *
-	 * @return int|null Expiration timestamp, or null if no expiration.
-	 */
-	public function get_expiration_time() {
-		return $this->value['expires'] ?? null;
-	}
-
-	/**
 	 * Check if the token is valid.
 	 *
 	 * @return bool True if the token is valid, false otherwise.
 	 */
 	public function is_valid() {
-		return ! $this->is_expired();
+		return true;
 	}
 }

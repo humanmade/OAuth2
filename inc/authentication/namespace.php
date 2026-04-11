@@ -165,19 +165,6 @@ function attempt_authentication( $user = null ) {
 		return $user;
 	}
 
-	// Check if the token has expired.
-	if ( $token->is_expired() ) {
-		$is_querying_token = false;
-		$oauth2_error      = new WP_Error(
-			'oauth2.authentication.token_expired',
-			__( 'Access token has expired.', 'oauth2' ),
-			[
-				'status' => \WP_Http::UNAUTHORIZED,
-			]
-		);
-		return $user;
-	}
-
 	$client            = $token->get_client();
 	$is_querying_token = false;
 
