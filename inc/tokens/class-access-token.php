@@ -9,6 +9,7 @@ namespace WP\OAuth2\Tokens;
 
 use WP_Error;
 use WP\OAuth2;
+use WP\OAuth2\Client;
 use WP\OAuth2\ClientInterface;
 use WP_User;
 use WP_User_Query;
@@ -19,10 +20,12 @@ class Access_Token extends Token {
 	const KEY_LENGTH         = 12;
 
 	/**
-	 * @return string Meta prefix.
+	 * @return string Meta prefix. Client tokens use a distinct prefix because
+	 *               they are stored as post meta on the Client post rather
+	 *               than user meta.
 	 */
 	protected function get_meta_prefix() {
-		return static::META_PREFIX;
+		return $this->is_client_token() ? static::CLIENT_META_PREFIX : static::META_PREFIX;
 	}
 
 	/**
@@ -79,7 +82,20 @@ class Access_Token extends Token {
 		}
 		$this->value['meta'][ $key ] = $value;
 
-		return update_user_meta( $this->get_user_id(), wp_slash( $this->get_meta_key() ), wp_slash( $this->value ) );
+		if ( $this->is_client_token() ) {
+			$client = $this->get_client();
+			if ( ! $client instanceof Client ) {
+				return false;
+			}
+
+			return (bool) update_post_meta(
+				$client->get_post_id(),
+				wp_slash( $this->get_meta_key() ),
+				wp_slash( $this->value )
+			);
+		}
+
+		return (bool) update_user_meta( $this->get_user_id(), wp_slash( $this->get_meta_key() ), wp_slash( $this->value ) );
 	}
 
 	/**
@@ -90,7 +106,20 @@ class Access_Token extends Token {
 	 *           need to also revoke refresh tokens.
 	 */
 	public function revoke() {
-		$success = delete_user_meta( $this->get_user_id(), $this->get_meta_key() );
+		if ( $this->is_client_token() ) {
+			$client = $this->get_client();
+			if ( ! $client instanceof Client ) {
+				return new WP_Error(
+					'oauth2.tokens.access_token.revoke.no_client',
+					__( 'Could not find client for token.', 'oauth2' )
+				);
+			}
+
+			$success = delete_post_meta( $client->get_post_id(), $this->get_meta_key() );
+		} else {
+			$success = delete_user_meta( $this->get_user_id(), $this->get_meta_key() );
+		}
+
 		if ( ! $success ) {
 			return new WP_Error(
 				'oauth2.tokens.access_token.revoke.could_not_revoke',
@@ -149,8 +178,8 @@ class Access_Token extends Token {
 	private static function get_client_token_by_id( $id ) {
 		$key  = static::CLIENT_META_PREFIX . $id;
 		$args = [
-			'post_type'      => OAuth2\Client::POST_TYPE,
-			'post_status'    => 'any',
+			'post_type'      => Client::POST_TYPE,
+			'post_status'    => 'publish',
 			'posts_per_page' => 1,
 			'meta_query'     => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
 				[
@@ -239,6 +268,13 @@ class Access_Token extends Token {
 	 * @return Access_Token|WP_Error Token instance, or error on failure.
 	 */
 	public static function create_for_client( ClientInterface $client, $meta = [] ) {
+		if ( ! $client instanceof Client ) {
+			return new WP_Error(
+				'oauth2.tokens.access_token.create_for_client.invalid_client',
+				__( 'Client credentials tokens require a post-backed Client.', 'oauth2' )
+			);
+		}
+
 		$data     = [
 			'client'  => $client->get_id(),
 			'created' => time(),

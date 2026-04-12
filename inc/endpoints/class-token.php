@@ -11,7 +11,6 @@ use WP_Error;
 use WP_Http;
 use WP\OAuth2;
 use WP_REST_Request;
-
 /**
  * Token endpoint handler.
  */
@@ -70,6 +69,28 @@ class Token {
 	public function exchange_token( WP_REST_Request $request ) {
 		if ( $request['grant_type'] === 'client_credentials' ) {
 			return $this->handle_client_credentials( $request );
+		}
+
+		// The authorization_code grant requires `client_id` and `code`.
+		// These are declared optional at the schema level so they don't
+		// apply to client_credentials, so validate presence here. The error
+		// shape matches what WP REST API would produce at the schema layer.
+		$missing = [];
+		foreach ( [ 'client_id', 'code' ] as $required_param ) {
+			if ( $request->get_param( $required_param ) === null || $request->get_param( $required_param ) === '' ) {
+				$missing[] = $required_param;
+			}
+		}
+		if ( ! empty( $missing ) ) {
+			return new WP_Error(
+				'rest_missing_callback_param',
+				/* translators: %s: comma-separated list of missing parameter names. */
+				sprintf( __( 'Missing parameter(s): %s', 'oauth2' ), implode( ', ', $missing ) ),
+				[
+					'status' => WP_Http::BAD_REQUEST,
+					'params' => $missing,
+				]
+			);
 		}
 
 		$client = OAuth2\get_client( $request['client_id'] );
@@ -136,20 +157,19 @@ class Token {
 
 		list( $client_id, $client_secret ) = $credentials;
 
-		$client = OAuth2\get_client( $client_id );
-		if ( empty( $client ) || ! $client->check_secret( $client_secret ) ) {
+		// Collapse "client not found", "wrong secret", and "grant disabled"
+		// into a single failure path. Distinguishing them in the response
+		// would let an attacker confirm a valid client_id/secret pair even
+		// when the grant happens to be disabled.
+		$client   = OAuth2\get_client( $client_id );
+		$creds_ok = $client && $client->check_secret( $client_secret );
+		$grant_ok = $client && $client->is_client_credentials_enabled();
+
+		if ( ! $creds_ok || ! $grant_ok ) {
 			return new WP_Error(
 				'oauth2.endpoints.token.invalid_client',
 				__( 'Client authentication failed.', 'oauth2' ),
 				[ 'status' => WP_Http::UNAUTHORIZED ]
-			);
-		}
-
-		if ( ! $client->is_client_credentials_enabled() ) {
-			return new WP_Error(
-				'oauth2.endpoints.token.client_credentials_disabled',
-				__( 'The client_credentials grant type is not enabled for this client.', 'oauth2' ),
-				[ 'status' => WP_Http::BAD_REQUEST ]
 			);
 		}
 
