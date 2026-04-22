@@ -11,6 +11,7 @@ use WP_Error;
 use WP\OAuth2;
 use WP\OAuth2\Client;
 use WP\OAuth2\ClientInterface;
+use WP_Query;
 use WP_User;
 use WP_User_Query;
 
@@ -189,7 +190,7 @@ class Access_Token extends Token {
 			],
 		];
 
-		$query = new \WP_Query( $args );
+		$query = new WP_Query( $args );
 		if ( empty( $query->posts ) ) {
 			return null;
 		}
