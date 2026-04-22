@@ -46,31 +46,17 @@ function get_authorization_header() {
  * @return string|null Token on success, null on failure.
  */
 function get_provided_token() {
-	// Prefer the standard Authorization header. Only if it is missing or
-	// does not contain a bearer token (e.g. a proxy has injected Basic
-	// auth), fall back to the non-standard X-Authorization header.
-	$header = get_authorization_header();
-	if ( $header ) {
-		$token = get_token_from_bearer_header( $header );
-		if ( $token ) {
-			return $token;
-		}
-	}
+    $header = get_authorization_header();
+    if ( $header ) {
+        return get_token_from_bearer_header( $header );
+    }
 
-	$alt_header = get_custom_authorization_header();
-	if ( $alt_header ) {
-		$token = get_token_from_bearer_header( $alt_header );
-		if ( $token ) {
-			return $token;
-		}
-	}
+    $token = get_token_from_request();
+    if ( $token ) {
+        return $token;
+    }
 
-	$token = get_token_from_request();
-	if ( $token ) {
-		return $token;
-	}
-
-	return null;
+    return null;
 }
 
 /**
