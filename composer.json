@@ -18,7 +18,8 @@
 		"wp-coding-standards/wpcs": "^2.1.1",
 		"dealerdirect/phpcodesniffer-composer-installer": "^1.0",
 		"phpcompatibility/phpcompatibility-wp": "^2.0",
-		"phpunit/phpunit": "^9.6"
+		"phpunit/phpunit": "^9.6",
+		"yoast/phpunit-polyfills": "^1.1 || ^2.0"
 	},
 	"config": {
 		"allow-plugins": {

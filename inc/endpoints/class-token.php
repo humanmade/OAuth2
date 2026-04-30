@@ -67,7 +67,7 @@ class Token {
 	 * @return array|WP_Error Token data on success, or error on failure.
 	 */
 	public function exchange_token( WP_REST_Request $request ) {
-		if ( $request['grant_type'] === 'client_credentials' ) {
+		if ( 'client_credentials' === $request['grant_type'] ) {
 			return $this->handle_client_credentials( $request );
 		}
 
@@ -206,7 +206,7 @@ class Token {
 			$encoded = substr( $auth_header, 6 );
 			$decoded = base64_decode( $encoded, true );
 
-			if ( $decoded === false ) {
+			if ( false === $decoded ) {
 				return new WP_Error(
 					'oauth2.endpoints.token.invalid_request',
 					__( 'Invalid Authorization header.', 'oauth2' ),
