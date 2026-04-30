@@ -23,17 +23,17 @@ class Token {
 				'methods'  => 'POST',
 				'callback' => [ $this, 'exchange_token' ],
 				'args'     => [
-					'grant_type' => [
+					'grant_type'    => [
 						'required'          => true,
 						'type'              => 'string',
 						'validate_callback' => [ $this, 'validate_grant_type' ],
 					],
-					'client_id'  => [
+					'client_id'     => [
 						'required'          => false,
 						'type'              => 'string',
 						'validate_callback' => 'rest_validate_request_arg',
 					],
-					'code'       => [
+					'code'          => [
 						'required'          => false,
 						'type'              => 'string',
 						'validate_callback' => 'rest_validate_request_arg',
