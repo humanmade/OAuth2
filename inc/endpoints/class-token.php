@@ -20,9 +20,10 @@ class Token {
 			'oauth2',
 			'/access_token',
 			[
-				'methods'  => 'POST',
-				'callback' => [ $this, 'exchange_token' ],
-				'args'     => [
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'exchange_token' ],
+				'permission_callback' => '__return_true',
+				'args'                => [
 					'grant_type'    => [
 						'required'          => true,
 						'type'              => 'string',
