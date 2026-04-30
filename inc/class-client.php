@@ -15,15 +15,16 @@ use WP_Query;
 use WP_User;
 
 class Client implements ClientInterface {
-	const POST_TYPE            = 'oauth2_client';
-	const CLIENT_SECRET_KEY    = '_oauth2_client_secret';
-	const TYPE_KEY             = '_oauth2_client_type';
-	const REDIRECT_URI_KEY     = '_oauth2_redirect_uri';
-	const AUTH_CODE_KEY_PREFIX = '_oauth2_authcode_';
-	const AUTH_CODE_LENGTH     = 12;
-	const CLIENT_ID_LENGTH     = 12;
-	const CLIENT_SECRET_LENGTH = 48;
-	const AUTH_CODE_AGE        = 600; // 10 * MINUTE_IN_SECONDS
+	const POST_TYPE                      = 'oauth2_client';
+	const CLIENT_SECRET_KEY              = '_oauth2_client_secret';
+	const TYPE_KEY                       = '_oauth2_client_type';
+	const REDIRECT_URI_KEY               = '_oauth2_redirect_uri';
+	const CLIENT_CREDENTIALS_ENABLED_KEY = '_oauth2_client_credentials_enabled';
+	const AUTH_CODE_KEY_PREFIX           = '_oauth2_authcode_';
+	const AUTH_CODE_LENGTH               = 12;
+	const CLIENT_ID_LENGTH               = 12;
+	const CLIENT_SECRET_LENGTH           = 48;
+	const AUTH_CODE_AGE                  = 600; // 10 * MINUTE_IN_SECONDS
 
 	/**
 	 * @var WP_Post
@@ -119,6 +120,26 @@ class Client implements ClientInterface {
 	 */
 	public function get_secret() {
 		return get_post_meta( $this->get_post_id(), static::CLIENT_SECRET_KEY, true );
+	}
+
+	/**
+	 * Check if the provided secret matches the client's secret.
+	 *
+	 * @param string $secret Secret to check.
+	 *
+	 * @return bool True if the secret matches, false otherwise.
+	 */
+	public function check_secret( $secret ) {
+		return hash_equals( $this->get_secret(), $secret );
+	}
+
+	/**
+	 * Check whether the client_credentials grant is enabled for this client.
+	 *
+	 * @return bool True if enabled, false otherwise.
+	 */
+	public function is_client_credentials_enabled() {
+		return (bool) get_post_meta( $this->get_post_id(), static::CLIENT_CREDENTIALS_ENABLED_KEY, true );
 	}
 
 	/**
@@ -336,9 +357,10 @@ class Client implements ClientInterface {
 
 		// Generate ID and secret.
 		$meta = [
-			static::REDIRECT_URI_KEY  => $data['meta']['callback'],
-			static::TYPE_KEY          => $data['meta']['type'],
-			static::CLIENT_SECRET_KEY => wp_generate_password( static::CLIENT_SECRET_LENGTH, false ),
+			static::REDIRECT_URI_KEY               => $data['meta']['callback'],
+			static::TYPE_KEY                       => $data['meta']['type'],
+			static::CLIENT_SECRET_KEY              => wp_generate_password( static::CLIENT_SECRET_LENGTH, false ),
+			static::CLIENT_CREDENTIALS_ENABLED_KEY => ! empty( $data['meta']['client_credentials_enabled'] ) ? '1' : '',
 		];
 
 		foreach ( $meta as $key => $value ) {
@@ -373,8 +395,9 @@ class Client implements ClientInterface {
 		}
 
 		$meta = [
-			static::REDIRECT_URI_KEY => $data['meta']['callback'],
-			static::TYPE_KEY         => $data['meta']['type'],
+			static::REDIRECT_URI_KEY               => $data['meta']['callback'],
+			static::TYPE_KEY                       => $data['meta']['type'],
+			static::CLIENT_CREDENTIALS_ENABLED_KEY => ! empty( $data['meta']['client_credentials_enabled'] ) ? '1' : '',
 		];
 
 		foreach ( $meta as $key => $value ) {

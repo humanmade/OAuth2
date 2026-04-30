@@ -105,8 +105,9 @@ function get_token_from_request() {
 function attempt_authentication( $user = null ) {
 	// Lock against infinite loops when querying the token itself.
 	static $is_querying_token = false;
-	global $oauth2_error;
-	$oauth2_error = null;
+	global $oauth2_error, $oauth2_client_credentials;
+	$oauth2_error              = null;
+	$oauth2_client_credentials = null;
 
 	if ( ! empty( $user ) || $is_querying_token ) {
 		return $user;
@@ -134,6 +135,30 @@ function attempt_authentication( $user = null ) {
 	if ( empty( $token ) || empty( $client ) ) {
 		$oauth2_error = create_invalid_token_error( $token_value );
 		return $user;
+	}
+
+	// Check if this is a client credentials token (no user)
+	if ( $token->is_client_token() ) {
+		if ( ! $client->is_client_credentials_enabled() ) {
+			$oauth2_error = new WP_Error(
+				'oauth2.authentication.client_credentials_disabled',
+				__( 'Client credentials authentication is not enabled for this client.', 'oauth2' ),
+				[
+					'status' => \WP_Http::FORBIDDEN,
+				]
+			);
+			return $user;
+		}
+
+		// Set global variable for client credentials authentication
+		$oauth2_client_credentials = [
+			'authenticated' => true,
+			'client_id'     => $client->get_id(),
+			'client'        => $client,
+			'token'         => $token,
+		];
+		// Return 0 to indicate no user but authentication is valid
+		return 0;
 	}
 
 	// Token found, authenticate as the user.

@@ -173,12 +173,13 @@ function validate_parameters( $params ) {
 	}
 	$valid['type'] = wp_kses_post( $params['type'] );
 
-	if ( empty( $params['callback'] ) ) {
+	$valid['client_credentials_enabled'] = ! empty( $params['client_credentials_enabled'] );
+
+	// Callback is required unless this client only uses client_credentials.
+	if ( empty( $params['callback'] ) && ! $valid['client_credentials_enabled'] ) {
 		return new WP_Error( 'rest_oauth2_missing_callback', esc_html__( 'Client callback is required and must be a valid URL.', 'oauth2' ) );
 	}
-	if ( ! empty( $params['callback'] ) ) {
-		$valid['callback'] = $params['callback'];
-	}
+	$valid['callback'] = empty( $params['callback'] ) ? '' : $params['callback'];
 
 	return $valid;
 }
@@ -215,8 +216,9 @@ function handle_edit_submit( Client $consumer = null ) {
 			'name'        => $params['name'],
 			'description' => $params['description'],
 			'meta'        => [
-				'type'     => $params['type'],
-				'callback' => $params['callback'],
+				'type'                       => $params['type'],
+				'callback'                   => $params['callback'],
+				'client_credentials_enabled' => $params['client_credentials_enabled'],
 			],
 		];
 
@@ -228,8 +230,9 @@ function handle_edit_submit( Client $consumer = null ) {
 			'name'        => $params['name'],
 			'description' => $params['description'],
 			'meta'        => [
-				'type'     => $params['type'],
-				'callback' => $params['callback'],
+				'type'                       => $params['type'],
+				'callback'                   => $params['callback'],
+				'client_credentials_enabled' => $params['client_credentials_enabled'],
 			],
 		];
 
@@ -322,11 +325,13 @@ function render_edit_page() {
 		foreach ( [ 'name', 'description', 'callback', 'type' ] as $key ) {
 			$data[ $key ] = empty( $form_data[ $key ] ) ? '' : $form_data[ $key ];
 		}
+		$data['client_credentials_enabled'] = ! empty( $form_data['client_credentials_enabled'] );
 	} else {
-		$data['name']        = $consumer->get_name();
-		$data['description'] = $consumer->get_description( true );
-		$data['type']        = $consumer->get_type();
-		$data['callback']    = $consumer->get_redirect_uris();
+		$data['name']                       = $consumer->get_name();
+		$data['description']                = $consumer->get_description( true );
+		$data['type']                       = $consumer->get_type();
+		$data['callback']                   = $consumer->get_redirect_uris();
+		$data['client_credentials_enabled'] = $consumer->is_client_credentials_enabled();
 
 		if ( is_array( $data['callback'] ) ) {
 			$data['callback'] = implode( ',', $data['callback'] );
@@ -430,6 +435,26 @@ function render_edit_page() {
 					<td>
 						<input type="text" class="regular-text" name="callback" id="oauth-callback" value="<?php echo esc_attr( $data['callback'] ); ?>"/>
 						<p class="description"><?php esc_html_e( "Your application's callback URI or a list of comma separated URIs. The callback passed with the request token must match the scheme, host, port, and path of this URL.", 'oauth2' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
+						<?php echo esc_html_x( 'Client Credentials Grant', 'field name', 'oauth2' ); ?>
+					</th>
+					<td>
+						<label for="oauth-client-credentials-enabled">
+							<input
+								type="checkbox"
+								name="client_credentials_enabled"
+								id="oauth-client-credentials-enabled"
+								value="1"
+								<?php checked( ! empty( $data['client_credentials_enabled'] ) ); ?>
+							/>
+							<?php esc_html_e( 'Allow this application to obtain tokens using the client_credentials grant.', 'oauth2' ); ?>
+						</label>
+						<p class="description">
+							<?php esc_html_e( 'When enabled, this application can authenticate without a user using its client ID and secret. Use for machine-to-machine integrations only. Tokens issued this way are not associated with a WordPress user.', 'oauth2' ); ?>
+						</p>
 					</td>
 				</tr>
 			</table>
