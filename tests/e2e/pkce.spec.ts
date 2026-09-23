@@ -132,12 +132,24 @@ async function s256Code() {
 	return { ...pair, code };
 }
 
+/**
+ * RFC 8414 section 2: the metadata lists code_challenge_methods_supported.
+ *
+ * @see https://datatracker.ietf.org/doc/html/rfc8414#section-2
+ */
 test( 'RFC 8414 metadata lists the supported PKCE methods', async () => {
 	const response = await client.get( '/.well-known/oauth-authorization-server' );
 	expect( ( await response.json() ).code_challenge_methods_supported ).toContain( 'S256' );
 } );
 
 test.describe( 'S256 flow', () => {
+	/**
+	 * RFC 7636 section 4: the full round trip, from challenge to verified token request.
+	 * RFC 6749 section 4.1.2: a code can only be used once.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc7636#section-4
+	 * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2
+	 */
 	test( 'code and verifier exchange for a token that works on the REST API', async () => {
 		const { verifier, challenge } = pkcePair();
 		const { location, formShown } = await authorize( clients.required, {
@@ -173,6 +185,11 @@ test.describe( 'S256 flow', () => {
 } );
 
 test.describe( 'token exchange is refused', () => {
+	/**
+	 * RFC 7636 section 4.6: a verifier that does not match the stored challenge gets invalid_grant.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc7636#section-4.6
+	 */
 	test( 'wrong verifier, and the code is burned afterwards', async () => {
 		const { code, verifier } = await s256Code();
 
@@ -184,6 +201,11 @@ test.describe( 'token exchange is refused', () => {
 		expect( retry.body.code ).toBe( INVALID_CODE );
 	} );
 
+	/**
+	 * RFC 7636 section 4.5: the client sends the code_verifier with the token request.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc7636#section-4.5
+	 */
 	test( 'missing verifier', async () => {
 		const { code } = await s256Code();
 		const token = await exchange( { grant_type: 'authorization_code', client_id: clients.required, code } );
@@ -191,6 +213,11 @@ test.describe( 'token exchange is refused', () => {
 		expect( token.body.code ).toContain( 'missing_verifier' );
 	} );
 
+	/**
+	 * RFC 6749 section 3.2: token requests are POSTed, so a verifier in the URL query is ignored.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc6749#section-3.2
+	 */
 	test( 'verifier sent only in the URL query string', async () => {
 		const { code, verifier } = await s256Code();
 		const token = await exchange( { grant_type: 'authorization_code', client_id: clients.required, code }, { query: { code_verifier: verifier } } );
@@ -198,6 +225,11 @@ test.describe( 'token exchange is refused', () => {
 		expect( token.body.code ).toContain( 'missing_verifier' );
 	} );
 
+	/**
+	 * RFC 9700 section 4.8.2: a code_verifier for a code issued without a code_challenge must be rejected.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc9700#section-4.8.2
+	 */
 	test( 'verifier sent for a code issued without PKCE', async () => {
 		const code = await getCode( clients.optional );
 		const token = await exchange( { grant_type: 'authorization_code', client_id: clients.optional, code, code_verifier: pkcePair().verifier } );
@@ -205,6 +237,23 @@ test.describe( 'token exchange is refused', () => {
 		expect( token.body.code ).toContain( 'unexpected_verifier' );
 	} );
 
+	/**
+	 * RFC 7636 section 4.6: the server applies the stored method, so the S256 challenge is not a valid verifier.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc7636#section-4.6
+	 */
+	test( 'S256 challenge sent as the verifier', async () => {
+		const { code, challenge } = await s256Code();
+		const token = await exchange( { grant_type: 'authorization_code', client_id: clients.required, code, code_verifier: challenge } );
+		expect( token.status ).toBe( 400 );
+		expect( token.body.data.error ).toBe( 'invalid_grant' );
+	} );
+
+	/**
+	 * RFC 6749 section 4.1.3: a code can only be redeemed by the client it was issued to.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.3
+	 */
 	test( 'code redeemed by a different client', async () => {
 		const { code, verifier } = await s256Code();
 		const token = await exchange( { grant_type: 'authorization_code', client_id: clients.optional, code, code_verifier: verifier } );
@@ -212,6 +261,13 @@ test.describe( 'token exchange is refused', () => {
 	} );
 } );
 
+/**
+ * RFC 7636 section 4.4.1: a missing challenge on a PKCE-required client, or an unsupported method, gets invalid_request.
+ * RFC 6749 section 4.1.2.1: so does a repeated or malformed parameter.
+ *
+ * @see https://datatracker.ietf.org/doc/html/rfc7636#section-4.4.1
+ * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1
+ */
 test.describe( 'authorize step is refused before consent', () => {
 	const cases: [ string, () => Promise< { location: URL; formShown: boolean } > ][] = [
 		[ 'required client without a challenge', () => authorize( clients.required, { state: 'st-6' } ) ],
@@ -231,11 +287,40 @@ test.describe( 'authorize step is refused before consent', () => {
 		} );
 	}
 
+	/**
+	 * RFC 6749 section 4.1.2.1: with an invalid redirect URI, the server must not redirect.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1
+	 */
+	test( 'a PKCE error is not redirected to an unregistered redirect_uri', async () => {
+		const query = new URLSearchParams( {
+			action: 'oauth2_authorize',
+			response_type: 'code',
+			client_id: clients.required,
+			redirect_uri: 'https://attacker.example/callback',
+		} );
+		const response = await browser.get( `/wp-login.php?${ query }`, { maxRedirects: 0 } );
+
+		expect( response.status() ).not.toBe( 302 );
+		expect( response.headers().location ).toBeUndefined();
+		expect( await response.text() ).toContain( 'Specified redirect URI is not valid for this client.' );
+	} );
+
+	/**
+	 * RFC 6749 section 4.1.2.1: the error redirect carries the exact state the client sent.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1
+	 */
 	test( 'the error redirect keeps the state', async () => {
 		const { location } = await authorize( clients.required, { state: 'st-6' } );
 		expect( location.searchParams.get( 'state' ) ).toBe( 'st-6' );
 	} );
 
+	/**
+	 * RFC 9700 section 2.1.1: S256 is the method to use, since plain does not protect the challenge.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc9700#section-2.1.1
+	 */
 	test( 'plain on a required client names S256 in the error', async () => {
 		const { location } = await authorize( clients.required, { code_challenge: pkcePair().verifier, code_challenge_method: 'plain' } );
 		expect( location.searchParams.get( 'error_description' ) ).toContain( 'S256' );
@@ -243,6 +328,11 @@ test.describe( 'authorize step is refused before consent', () => {
 } );
 
 test.describe( 'clients with optional PKCE', () => {
+	/**
+	 * RFC 7636 section 4.2: with plain, the challenge is the verifier itself.
+	 *
+	 * @see https://datatracker.ietf.org/doc/html/rfc7636#section-4.2
+	 */
 	test( 'plain exchanges for a token', async () => {
 		const { verifier } = pkcePair();
 		const code = await getCode( clients.optional, { code_challenge: verifier, code_challenge_method: 'plain' } );
@@ -257,6 +347,13 @@ test.describe( 'clients with optional PKCE', () => {
 	} );
 } );
 
+/**
+ * RFC 9700 section 2.1.2: the implicit grant cannot bind a code_challenge.
+ * RFC 6749 section 4.2.2.1: implicit grant errors go in the fragment.
+ *
+ * @see https://datatracker.ietf.org/doc/html/rfc9700#section-2.1.2
+ * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.2.2.1
+ */
 test( 'implicit grant is refused for a PKCE-required client, in the fragment', async () => {
 	const { location, formShown } = await authorize( clients.required, { state: 'st-13' }, { responseType: 'token' } );
 	const fragment = new URLSearchParams( location.hash.slice( 1 ) );
@@ -267,6 +364,11 @@ test( 'implicit grant is refused for a PKCE-required client, in the fragment', a
 	expect( fragment.get( 'state' ) ).toBe( 'st-13' );
 } );
 
+/**
+ * RFC 6749 section 4.1.2.1: a refused request gets access_denied.
+ *
+ * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1
+ */
 test( 'cancel on the consent form sends access_denied', async () => {
 	const { challenge } = pkcePair();
 	const { location, formShown } = await authorize(
