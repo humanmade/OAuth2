@@ -118,5 +118,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Run PKCE e2e checks
-        run: bash tests/e2e/run.sh
+      - name: Install npm dependencies
+        run: npm ci
+
+      # The specs only use Playwright's request API, so no browser is installed.
+      - name: Run Playwright e2e tests
+        run: npx playwright test
