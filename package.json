@@ -1,0 +1,12 @@
+{
+	"name": "oauth2",
+	"private": true,
+	"description": "End-to-end tests for the OAuth2 plugin.",
+	"scripts": {
+		"test:e2e": "playwright test"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.63.0",
+		"@wp-playground/cli": "^3.1.55"
+	}
+}

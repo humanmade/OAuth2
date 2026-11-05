@@ -22,3 +22,6 @@ _book
 *.mobi
 *.pdf
 .idea
+# Playwright output
+test-results
+playwright-report
