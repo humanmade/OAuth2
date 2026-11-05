@@ -227,6 +227,15 @@ class Token {
 			);
 		}
 
+		// A client ID metadata document client uses the none authentication
+		// method, so a secret from the request cannot authenticate it.
+		if ( $client instanceof OAuth2\Client && $client->is_cimd() ) {
+			$supplied_secret = ! $this->is_param_empty( $request, 'client_secret' ) || ( null !== $basic && '' !== $basic[1] );
+			if ( $supplied_secret ) {
+				return $this->client_authentication_failed();
+			}
+		}
+
 		// RFC 6749 section 4.1.3: the server must authenticate the client when
 		// the client is confidential. Public clients have no secret to check.
 		if ( $client->requires_secret() ) {
@@ -240,6 +249,8 @@ class Token {
 		if ( is_wp_error( $auth_code ) ) {
 			return $auth_code;
 		}
+
+		$generation = $auth_code->get_client_generation();
 
 		// Read from the body only, not get_param(), which also reads $_GET on a
 		// POST route — a verifier belongs in the body, not the URL, since a URL
@@ -268,7 +279,8 @@ class Token {
 			return $did_delete;
 		}
 
-		$token = $client->issue_token( $user );
+		// Stamp the token with the generation the code was issued under, so a rotation since the code was loaded leaves a dead token.
+		$token = $client->issue_token( $user, [], '' !== $generation ? $generation : null );
 		if ( is_wp_error( $token ) ) {
 			return $token;
 		}

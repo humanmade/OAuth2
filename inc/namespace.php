@@ -9,6 +9,7 @@ namespace WP\OAuth2;
 
 use WP\OAuth2\Types\Type;
 use WP_CLI;
+use WP_Error;
 use WP_REST_Response;
 
 function bootstrap() {
@@ -156,14 +157,49 @@ function get_token_url() {
 /**
  * Get a client by ID.
  *
- * @param string $id ID for the client.
+ * @param string $id   ID for the client.
+ * @param array  $args {
+ *     Optional arguments.
  *
- * @return ClientInterface Client instance.
+ *     @type bool $include_unapproved Whether to also return draft and pending clients. Default false.
+ *     @type bool $discover           Whether to fetch or refresh the metadata document of a CIMD client ID. Default false.
+ * }
+ *
+ * @return ClientInterface|WP_Error|null Client instance, null if not found, or an error if discovery failed.
  */
-function get_client( $id ) {
+function get_client( $id, array $args = [] ) {
 	if ( PersonalClient::ID === $id ) {
 		return PersonalClient::get_instance();
 	}
 
-	return Client::get_by_id( $id );
+	$args = array_merge(
+		[
+			'include_unapproved' => false,
+			'discover'           => false,
+		],
+		$args
+	);
+
+	if ( ! CIMD\is_cimd_client_id( $id ) ) {
+		return Client::get_by_id( $id, $args['include_unapproved'] );
+	}
+
+	// Switches that block a client apply to every lookup, with or without discovery.
+	if ( ! CIMD\is_enabled() || is_wp_error( CIMD\validate_client_id_url( $id ) ) ) {
+		return null;
+	}
+
+	$discover = $args['discover'];
+	$stored   = Client::get_by_id( $id, $args['include_unapproved'] || $discover );
+
+	if ( ! $discover ) {
+		return $stored;
+	}
+
+	$client = CIMD\discover_client( $id, $stored );
+	if ( $client instanceof Client && ! $args['include_unapproved'] && ! $client->is_approved() ) {
+		return null;
+	}
+
+	return $client;
 }
